@@ -44,19 +44,23 @@ endif
 ifeq ($(OS_KIND),win)
   LIB      := catsena.dll
   EXE      := .exe
-  SHARED   := -shared                # 不再 --export-all-symbols: 那会把 cJSON 一起导出, 改用 catsena.def
+  SHARED   := -shared                # 不写 --export-all-symbols: 那会把 cJSON 一起导出
   LIBS     := -lws2_32 -lbcrypt
   PIC      :=
-  RUN      :=
-  DEFARG   := -Wl,catsena.def -Wl,--exclude-all-symbols   # 只导出 .def 点名的公开符号(cJSON 不外泄)
+  RUN      :=                        # cmd.exe 认裸文件名(先查当前目录)
+  RM       := del /Q
+  RMERR    := 2>nul
+  DEFARG   := -Wl,catsena.def -Wl,--exclude-all-symbols   # 只导出 .def 点名的符号
 else
   LIB      := catsena.so
   EXE      :=
   SHARED   := -shared -fPIC
   LIBS     := -lpthread
   PIC      := -fPIC
-  RUN      :=
-  DEFARG   := -Wl,catsena.def -Wl,--exclude-all-symbols   # 只导出 .def 点名的公开符号(cJSON 不外泄) ./
+  RUN      := ./                     # sh 必须带 ./
+  RM       := rm -f
+  RMERR    :=
+  DEFARG   := -Wl,--version-script=catsena.map           # .def 的 Linux 等价物
   CPPFLAGS += -D_GNU_SOURCE
 endif
 
@@ -84,7 +88,7 @@ version:
 
 so: $(LIB)
 
-$(LIB): $(SRC) $(HEADERS) catsena.def
+$(LIB): $(SRC) $(HEADERS) catsena.def catsena.map
 	gcc $(CFLAGS) $(CPPFLAGS) $(SHARED) $(SRC) $(DEFARG) $(LIBS) -o $(LIB)
 
 # 每个测试独立编译(测试之间有 main 冲突, 不能合到一起)
@@ -132,9 +136,11 @@ DIST := dist
 
 dist: $(LIB)
 	@node -e "const fs=require('fs'),p=require('path');const d='dist';['include','lib','bin','thirdparty/cjson'].forEach(x=>fs.mkdirSync(p.join(d,x),{recursive:true}));['map.h','mapdef.h','mapworker.h','utils.h','platform.h','version.h'].forEach(f=>fs.copyFileSync(f,p.join(d,'include',f)));fs.copyFileSync('$(LIB)',p.join(d,'lib','$(LIB)'));fs.copyFileSync('$(LIB)',p.join(d,'bin','$(LIB)'));fs.copyFileSync('thirdparty/cjson/LICENSE',p.join(d,'thirdparty/cjson','LICENSE'));['LICENSE','README.md','API.md','DEPENDENCIES.md'].forEach(f=>fs.copyFileSync(f,p.join(d,f)));console.log('dist/: include('+fs.readdirSync(p.join(d,'include')).length+') lib bin thirdparty 已生成')"
+# clean 用 $(RM)/$(RMERR): cmd 下是 del /Q ... 2>nul, sh 下是 rm -f —— 同一份 Makefile 两边都能跑。
+# 前缀 '-' 表示"文件本来就不存在"不算错误。
 clean:
-	rm -f $(LIB) $(TESTS) *.o *.map
+	-$(RM) $(LIB) $(TESTS) *.o *.exe *.dll *.so test-*.map _rt.map $(RMERR)
 
 # 版本头也清掉(下次 make 会用新时间戳重新生成)
 clean-version:
-	rm -f version.h
+	-$(RM) version.h $(RMERR)

@@ -1,4 +1,4 @@
-# 构建产物
+# ---- 构建产物 ----
 *.o
 *.obj
 *.exe
@@ -11,24 +11,31 @@
 *.exp
 *.pdb
 
-# 内核自测/运行产生的数据
-*.map
+# make dist 的产出目录
 dist/
+
+# ---- 内核自测落盘出来的图存档(不是源码) ----
+/test-*.map
+/_rt.map
 *.map.*.bak
+# 注意: catsena.map 是 Linux 的链接器导出表(构建输入, 已入库), 上面的规则不能误伤它。
+
+# ---- 日志 ----
 *.log
 *.err
 
-# 版本头是生成物(见 tools/genversion.mjs)。
-# 但为了"只要有 C 编译器就能构建", 仓库里保留一份; 用 `make clean-version` 强制重生成。
-# version.h
+# ---- version.h ----
+# 它由 tools/genversion.mjs 从 VERSION + git 生成, 但仓库里保留一份,
+# 这样"只要有 C 编译器就能构建"(不必装 node)。要强制重生成用 make clean-version。
 
-# 编辑器/系统
+# ---- 编辑器 / 系统 ----
 .vscode/
 .idea/
 .cache/
 compile_commands.json
 .DS_Store
 Thumbs.db
-# Python
+
+# ---- Python ----
 __pycache__/
 *.pyc

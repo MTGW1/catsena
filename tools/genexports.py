@@ -17,7 +17,8 @@ import sys
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HEADERS = ["map.h", "mapdef.h", "mapworker.h", "utils.h"]
-OUT = os.path.join(HERE, "catsena.def")
+OUT_DEF = os.path.join(HERE, "catsena.def")
+OUT_MAP = os.path.join(HERE, "catsena.map")
 
 # 去掉注释后再扫, 否则注释里的示例代码会被当成声明
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
@@ -45,18 +46,33 @@ def render(names):
     return "\n".join(lines) + "\n"
 
 
+def render_map(names):
+    """Linux 等价物: linker version script(global 列出的导出, 其余全藏)。"""
+    lines = ["/* catsena.map —— 由 tools/genexports.py 生成, 别手改",
+             "   Linux 的 .so 用它收敛导出面: global 只列公开 API, local 吞掉其余(含 cJSON)。 */",
+             "{", "  global:"]
+    lines += ["    %s;" % n for n in names]
+    lines += ["  local:", "    *;", "};"]
+    return "\n".join(lines) + "\n"
+
+
 def main():
     names = collect()
-    new = render(names)
-    old = open(OUT, encoding="utf-8").read() if os.path.exists(OUT) else ""
+    files = {OUT_DEF: render(names), OUT_MAP: render_map(names)}
     if "--check" in sys.argv:
-        if new == old:
-            print("catsena.def 与头文件一致 (%d 个导出)" % len(names))
-            return 0
-        print("catsena.def 已过期, 跑 tools/genexports.py 重新生成")
-        return 1
-    open(OUT, "w", encoding="utf-8", newline="\n").write(new)
-    print("catsena.def: %d 个导出" % len(names))
+        bad = []
+        for p, new in files.items():
+            old = open(p, encoding="utf-8").read() if os.path.exists(p) else ""
+            if new != old:
+                bad.append(os.path.basename(p))
+        if bad:
+            print("导出文件已过期: %s —— 跑 tools/genexports.py 重新生成" % ", ".join(bad))
+            return 1
+        print("导出文件与头文件一致 (%d 个导出: catsena.def + catsena.map)" % len(names))
+        return 0
+    for p, content in files.items():
+        open(p, "w", encoding="utf-8", newline="\n").write(content)
+    print("导出文件: %d 个 (catsena.def / catsena.map)" % len(names))
     return 0
 
 
