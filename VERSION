@@ -1,0 +1,7 @@
+# catsena 内核版本（语义化版本，唯一真相）
+#
+# 改这里 → 重新 make → version.h 自动重新生成 → 内核的 map_version()/map_buildinfo()
+# 和上层（服务层 version 命令、控制台欢迎信息）一起变。
+#
+# 0.1.0  首个可用内核：图/节点/边/attrs/uuid/session/并发/存档
+0.1.0

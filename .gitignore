@@ -1,0 +1,30 @@
+# 构建产物
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.so.*
+*.dylib
+*.a
+*.lib
+*.exp
+*.pdb
+
+# 内核自测/运行产生的数据
+*.map
+*.map.*.bak
+*.log
+*.err
+
+# 版本头是生成物(见 tools/genversion.mjs)。
+# 但为了"只要有 C 编译器就能构建", 仓库里保留一份; 用 `make clean-version` 强制重生成。
+# version.h
+
+# 编辑器/系统
+.vscode/
+.idea/
+.cache/
+compile_commands.json
+.DS_Store
+Thumbs.db
