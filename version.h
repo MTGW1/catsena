@@ -1,8 +1,8 @@
 /* version.h —— 自动生成, 别手改.
    由 tools/genversion.mjs 从 VERSION + git 生成; 改版本请改 VERSION 后重新 make.
-   生成时间: 2026-11-17T14:53:00Z
+   生成时间: 2026-11-17T15:06:51Z
    版本:     0.1.0
-   git:      9341b15-dirty
+   git:      2aab824-dirty
    ABI:      1
 */
 #ifndef CATSENA_VERSION_H
@@ -10,10 +10,10 @@
 
 #define CATSENA_VERSION     "0.1.0"
 #define CATSENA_ABI         1
-#define CATSENA_BUILD       "0.1.0+20261117.145300.09579d96"
-#define CATSENA_BUILD_ID    "09579d96"
-#define CATSENA_BUILD_DATE  "2026-11-17T14:53:00Z"
-#define CATSENA_GIT         "9341b15-dirty"
-#define CATSENA_BUILDINFO   "catsena 0.1.0 (build 2026-11-17T14:53:00Z, 9341b15-dirty) ABI 1"
+#define CATSENA_BUILD       "0.1.0+20261117.150651.25ff17d2"
+#define CATSENA_BUILD_ID    "25ff17d2"
+#define CATSENA_BUILD_DATE  "2026-11-17T15:06:51Z"
+#define CATSENA_GIT         "2aab824-dirty"
+#define CATSENA_BUILDINFO   "catsena 0.1.0 (build 2026-11-17T15:06:51Z, 2aab824-dirty) ABI 1"
 
 #endif /* CATSENA_VERSION_H */

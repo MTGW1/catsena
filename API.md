@@ -151,6 +151,35 @@ int map_emit(map* m, evt, map_node* arg);          // on_change 钩子触发点
 `MapConfig`: `base.max_workers`(线程池大小) / `enable_index` / `enable_trash` /
 `hooks->on_change`(应用端挂: 变更→自动保存/广播)、`index_fn`/`store_fn`(可插拔)。
 
+### 图查询辅助(utils.h，建在图操作之上的常用问答)
+
+```c
+void map_uuids_free(char** uuids, size_t count);   // 下面所有 char** 输出的唯一正确出口
+
+// 1. 框选分析: 选区内的节点若有一条关系连到选区外 → 它是"边界节点"
+int map_select_exposed_nodes(map* m, const map_node** selected, size_t n,
+                             char*** out_uuids,          size_t* out_count,        // 边界节点
+                             char*** out_outside_uuids,  size_t* out_outside_count); // 选区外邻居(去重)
+
+// 2. 两点是否同一子图(沿 邻/父/子/边 + 边两端集合 做无向连通) → 1/0/-1
+int map_nodes_may_know(map* m, const map_node* a, const map_node* b);
+
+// 3. 周围有谁(去重): mode 是位掩码, 不是 0/1/2 枚举
+int map_node_related_uuids(const map_node* n, int mode, char*** out, size_t* count);
+//   MAP_REL_NEIGHBOR(1) | MAP_REL_CHILD(2) | MAP_REL_PARENT(4) ; MAP_REL_ALL = 7
+```
+
+约定与坑(全部由 `test-utils` 钉死):
+
+- **所有权**: 所有 `char**` 都由内核分配, 必须用 `map_uuids_free()`, 不要自己 `free(arr)`。
+- **失败安全**: 参数错误时返回 -1 且四个输出全部被置成 NULL/0, 失败后照样可以安全释放。
+- **纯查询**: 三个函数都不取锁、不改图; 调用方需自己保证并发期间图不被改(或在外层持读锁)。
+- **`may_know` 的语义边界**: 树状结构(所有节点都在同一 root 下)里任意两点都连通 ——
+  这个函数只在存在独立连通分量时才有区分度。
+- **`mode` 是位掩码**: 早期文档写成 0=邻居/1=子/2=父 的枚举, 和实现对不上; 现在以位掩码为准,
+  `mode=0` 或越界一律返回 -1(不静默返回空数组)。
+- **边节点也要选进去**: 框选时若漏掉边节点, 它会被算作"选区外", 导致边界节点和外部列表都偏大。
+
 ## 2. 命令协议(应用层主要通道)
 
 文本命令 → `map_session_exec` → 文本回执。路径锚定会话根; `uuid:<hex>` 直接寻址。

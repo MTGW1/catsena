@@ -13,6 +13,7 @@
 
 # 内核自测/运行产生的数据
 *.map
+dist/
 *.map.*.bak
 *.log
 *.err

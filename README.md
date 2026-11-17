@@ -39,6 +39,8 @@ worker/命令队列骨架 —— 内核给挂接点，应用层挂自己那套�
 make            # 构建共享库 + 跑全部自测
 make so         # 只构建 catsena.so / catsena.dll
 make test       # 只跑自测
+make dist       # 生成 dist/（include + lib + bin + thirdparty，给别人用的最小集合）
+make exports    # 重新生成 Windows 导出表 catsena.def
 make info       # 打印 OS_KIND / LIB / 版本宏
 ```
 
@@ -88,6 +90,7 @@ print(lib.map_version())             # b"0.1.0"
 | 遍历 | `map_find_uuid` `map_find_path` `map_collect_subtree` `map_gc` `map_emit` |
 | node 级 | `map_node_new` `map_node_free` `map_node_is_edge` `map_link_parent_child` `map_edge_end_add/del` `map_attr_set/get` … |
 | 底层 | `map_sha256`（内建，标准向量自测） |
+| 查询辅助（`utils.h`） | `map_select_exposed_nodes`（框选边界） `map_nodes_may_know`（两点是否同一子图） `map_node_related_uuids`（周围有谁） `map_uuids_free`（唯一正确出口） |
 
 内核内部函数不属于接口，变更不通知 —— 见 `API.md` 开头的契约声明。
 
@@ -108,6 +111,7 @@ print(lib.map_version())             # b"0.1.0"
 | `verify-sha256` | 9 组 SHA256 标准向量（空串 → 64/65 字节边界） |
 | `test-id` | `id` 跨存档稳定、`uuid` 随内容变、还原后新建 id 不撞车 |
 | `test-edge` | 1→N 边、N×M 共享边、端点摘空自删、旧格式存档兼容 |
+| `test-utils` | 框选边界/外部邻居、两点连通（含独立分量）、周围 uuid 去重、位掩码校验、失败路径输出清空、`map_uuids_free` |
 | `test-mt` | 8 线程并发读写：堆完整 + 伸缩比 |
 | `test-version` | 版本宏与 `map_*` 返回值一致性、ABI |
 
@@ -134,10 +138,12 @@ map.c map.h          图模型 + 全部导出 API（~1900 行）
 mapdef.h             map_node / map_ptr_array / map_attr / map_data_kind
 mapworker.c/.h       worker 线程池 + 命令队列骨架
 platform.h           平台层（Windows crypto / POSIX 差异收口）
-utils.c/.h           字符串/数组工具
+utils.c/.h           图查询辅助(框选边界/连通判定/周围有谁) + map_uuids_free
 version.h            ！生成物，别手改（tools/genversion.mjs）
+tools/               genversion.mjs / genexports.py / rename_symbols.py
 thirdparty/cjson/    cJSON 1.7.19（MIT，见该目录 LICENSE）
 maptest.c test-*.c verify-sha256.c  自测
+catsena.def          ！Windows 导出表（生成物，tools/genexports.py）
 API.md               内核↔应用接口契约（权威）
 DEPENDENCIES.md      依赖清单与许可
 ```
@@ -155,6 +161,18 @@ DEPENDENCIES.md      依赖清单与许可
 `AccessDenied.md` 那句「内核不知道什么是权限 —— 它只认边」就是这里的设计约束。
 
 ---
+
+## 导出面（ABI 纪律）
+
+Windows 的 DLL 用 `catsena.def` 精确控制导出：**51 个符号，全部是公开头文件里声明的 `map_*`**，
+内嵌 cJSON 一个都不外泄（cJSON 1.7.x 默认把每个函数标 `__declspec(dllexport)`，
+所以编译它时必须带上 `-DCJSON_HIDE_SYMBOLS`，见 Makefile 的 `CPPFLAGS`）。
+
+`catsena.def` 是生成物：改了公开头文件就跑 `make exports` 重新生成，别手改。
+`tools/genexports.py --check` 可以在 CI 里比对是否过期。
+
+> **已知限制**：Linux 的 `.so` 目前仍按默认导出（会带出 cJSON 符号）。要收敛得加
+> `-fvisibility=hidden` 并在公开声明上加可见性属性，还没做。
 
 ## 许可
 

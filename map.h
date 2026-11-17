@@ -197,6 +197,8 @@ const char* map_attr_get(const map_node* n, const char* key);
 map_node* map_find_node_by_path(map_node* root, const char* path);
 /* 存档(明文 JSON, 格式兼容旧 .map) */
 int map_save(map* m, const char* path);
+/* 向已有实例载入(替换 root; 失败时 root 保持不动 —— 见 map.c:1336) */
+int map_load(map* m, const char* path);
 
 int map_sha256(const char* data, size_t len, char* out_hex);
 

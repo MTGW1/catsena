@@ -20,12 +20,14 @@ else
   UNAME := $(shell uname -s 2>/dev/null || echo Windows)
 endif
 
-SRC      := map.c mapworker.c thirdparty/cjson/cJSON.c
-HEADERS  := map.h mapdef.h mapworker.h platform.h version.h thirdparty/cjson/cJSON.h
+SRC      := map.c mapworker.c utils.c thirdparty/cjson/cJSON.c
+HEADERS  := map.h mapdef.h mapworker.h utils.h platform.h version.h thirdparty/cjson/cJSON.h
 # 版本的唯一真相: VERSION 文件; version.h 由它(和 git)生成
 VERSION_SRC := VERSION tools/genversion.mjs
 CFLAGS   ?= -std=c11 -O2 -Wall -Wextra
-CPPFLAGS := -I.
+# CJSON_HIDE_SYMBOLS: cJSON 1.7.x 默认把每个函数标 __declspec(dllexport),
+# 那会绕过 catsena.def 把 78 个 cJSON 符号塞进我们的 ABI。定义它 → 退化成普通声明。
+CPPFLAGS := -I. -DCJSON_HIDE_SYMBOLS
 
 ifeq ($(findstring MINGW,$(UNAME)$(OS)),MINGW)
   OS_KIND := win
@@ -42,24 +44,29 @@ endif
 ifeq ($(OS_KIND),win)
   LIB      := catsena.dll
   EXE      := .exe
-  SHARED   := -shared -Wl,--export-all-symbols
+  SHARED   := -shared                # 不再 --export-all-symbols: 那会把 cJSON 一起导出, 改用 catsena.def
   LIBS     := -lws2_32 -lbcrypt
   PIC      :=
   RUN      :=
+  DEFARG   := -Wl,catsena.def -Wl,--exclude-all-symbols   # 只导出 .def 点名的公开符号(cJSON 不外泄)
 else
   LIB      := catsena.so
   EXE      :=
   SHARED   := -shared -fPIC
   LIBS     := -lpthread
   PIC      := -fPIC
-  RUN      := ./
+  RUN      :=
+  DEFARG   := -Wl,catsena.def -Wl,--exclude-all-symbols   # 只导出 .def 点名的公开符号(cJSON 不外泄) ./
   CPPFLAGS += -D_GNU_SOURCE
 endif
 
-TESTS := maptest$(EXE) verify-sha256$(EXE) test-id$(EXE) test-edge$(EXE) test-mt$(EXE) test-version$(EXE)
+TESTS := maptest$(EXE) verify-sha256$(EXE) test-id$(EXE) test-edge$(EXE) test-utils$(EXE) test-mt$(EXE) test-version$(EXE)
 
-.PHONY: all so test clean info version clean-version deploy
+.PHONY: all so test clean exports info version clean-version deploy dist
 all: so test
+
+exports:
+	@python tools/genexports.py 2>/dev/null || python3 tools/genexports.py
 
 info:
 	@echo "OS_KIND=$(OS_KIND)  LIB=$(LIB)  LIBS=$(LIBS)"
@@ -77,8 +84,8 @@ version:
 
 so: $(LIB)
 
-$(LIB): $(SRC) $(HEADERS)
-	gcc $(CFLAGS) $(CPPFLAGS) $(SHARED) $(SRC) $(LIBS) -o $(LIB)
+$(LIB): $(SRC) $(HEADERS) catsena.def
+	gcc $(CFLAGS) $(CPPFLAGS) $(SHARED) $(SRC) $(DEFARG) $(LIBS) -o $(LIB)
 
 # 每个测试独立编译(测试之间有 main 冲突, 不能合到一起)
 maptest$(EXE): maptest.c $(SRC) $(HEADERS)
@@ -89,6 +96,8 @@ test-id$(EXE): test-id.c $(SRC) $(HEADERS)
 	gcc $(CFLAGS) $(CPPFLAGS) $(SRC) test-id.c $(LIBS) -o $@
 test-edge$(EXE): test-edge.c $(SRC) $(HEADERS)
 	gcc $(CFLAGS) $(CPPFLAGS) $(SRC) test-edge.c $(LIBS) -o $@
+test-utils$(EXE): test-utils.c $(SRC) $(HEADERS)
+	gcc $(CFLAGS) $(CPPFLAGS) $(SRC) test-utils.c $(LIBS) -o $@
 test-mt$(EXE): test-mt.c $(SRC) $(HEADERS)
 	gcc $(CFLAGS) $(CPPFLAGS) $(SRC) test-mt.c $(LIBS) -o $@
 test-version$(EXE): test-version.c $(SRC) $(HEADERS)
@@ -103,6 +112,8 @@ test: $(TESTS)
 	@$(RUN)test-id$(EXE)
 	@echo ===== edge 1-N and shared =====
 	@$(RUN)test-edge$(EXE)
+	@echo ===== utils =====
+	@$(RUN)test-utils$(EXE)
 	@echo ===== threads =====
 	@$(RUN)test-mt$(EXE) 8 800 1
 	@echo ===== version =====
@@ -113,6 +124,14 @@ test: $(TESTS)
 deploy: $(LIB)
 	@node -e "const fs=require('fs');try{fs.copyFileSync(process.argv[1],process.argv[2]);console.log('deploy: '+process.argv[2])}catch(e){console.error('deploy 失败: '+e.message+' —— 库多半被占用, 先停 node server.mjs 再试');process.exit(1)}" $(LIB) ../$(LIB)
 
+# ---------- 打包 ----------
+# dist/include + dist/lib + dist/bin + dist/thirdparty —— 给别人用的最小集合。
+# 用 node 做拷贝: mingw32-make 在 Windows 用 cmd.exe 当 shell, 而 Linux 用 sh,
+# mkdir/cp 的参数不通用(node 两边行为一样, 且 version.h 本来就依赖 node)。
+DIST := dist
+
+dist: $(LIB)
+	@node -e "const fs=require('fs'),p=require('path');const d='dist';['include','lib','bin','thirdparty/cjson'].forEach(x=>fs.mkdirSync(p.join(d,x),{recursive:true}));['map.h','mapdef.h','mapworker.h','utils.h','platform.h','version.h'].forEach(f=>fs.copyFileSync(f,p.join(d,'include',f)));fs.copyFileSync('$(LIB)',p.join(d,'lib','$(LIB)'));fs.copyFileSync('$(LIB)',p.join(d,'bin','$(LIB)'));fs.copyFileSync('thirdparty/cjson/LICENSE',p.join(d,'thirdparty/cjson','LICENSE'));['LICENSE','README.md','API.md','DEPENDENCIES.md'].forEach(f=>fs.copyFileSync(f,p.join(d,f)));console.log('dist/: include('+fs.readdirSync(p.join(d,'include')).length+') lib bin thirdparty 已生成')"
 clean:
 	rm -f $(LIB) $(TESTS) *.o *.map
 
