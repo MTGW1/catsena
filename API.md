@@ -8,43 +8,43 @@
 ## 1. 数据模型: 节点定义(mapdef.h 原文)
 
 ```c
-typedef struct node {
+typedef struct map_node {
     uint64_t     id;
-    data_kind    dtype;      /* 载荷类型(TEXT/FILE) */
+    map_data_kind    dtype;      /* 载荷类型(TEXT/FILE) */
     void*        data;       /* 不透明载荷 */
     unsigned     owns_data : 1; /* data 是否由节点自持: 1=destroy 时 free */
     unsigned     alive : 1;     /* 1=活跃; DAG(多父/共享)下防二次释放 */
-    size_t_      data_len;   /* data 字节长度(TEXT=strlen) */
-    char*        sha256;     /* data 的 SHA256, hex(可为 NULL: 二进制未知) */
+    map_size      data_len;   /* data 字节长度(TEXT=strlen) */
+    char*        map_sha256;     /* data 的 SHA256, hex(可为 NULL: 二进制未知) */
 
     /* 关系(指针集合) */
-    ptr_array neighbors;   /* 邻节点(无向) */
-    ptr_array childs;      /* 子节点(有向被指向端) */
-    ptr_array parents;     /* 父节点(有向指向端) */
-    ptr_array edges;       /* 边节点列表 */
-    ptr_array edge_as;     /* 边节点专用: 主体端(集合, 1→N / 共享边同一结构) */
-    ptr_array edge_bs;     /* 边节点专用: 客体端(集合) */
+    map_ptr_array neighbors;   /* 邻节点(无向) */
+    map_ptr_array childs;      /* 子节点(有向被指向端) */
+    map_ptr_array parents;     /* 父节点(有向指向端) */
+    map_ptr_array edges;       /* 边节点列表 */
+    map_ptr_array edge_as;     /* 边节点专用: 主体端(集合, 1→N / 共享边同一结构) */
+    map_ptr_array edge_bs;     /* 边节点专用: 客体端(集合) */
 
     /* 属性表(node_attr*) —— 应用端语义识别 */
-    ptr_array attrs;
+    map_ptr_array attrs;
 
     char*    uuid;       /* 唯一标识 = 除 id/uuid 外字段的 SHA256 指纹 */
-} node;
+} map_node;
 ```
 
 **解读(应用层必读)**:
-- 节点 = 数据容器 + 关系端点二合一; 边也是节点(两端集合都非空即判定, 见 `node_is_edge`)
+- 节点 = 数据容器 + 关系端点二合一; 边也是节点(两端集合都非空即判定, 见 `map_node_is_edge`)
 - **边两端都是集合**: 普通关系各 1 个; 一对多 = A 端 1 个; 共享边 = 两端多个。
-  加/减端点用 `edge_end_add` / `edge_end_del`(幂等, 内部会刷 uuid); 某端摘空则边不再成立
+  加/减端点用 `map_edge_end_add` / `map_edge_end_del`(幂等, 内部会刷 uuid); 某端摘空则边不再成立
 - `attrs` = 应用层的语义出口: 内核只存, key 含义全部由应用端约定(角色/权限/时间线/页面)
 - `uuid` = 内容寻址指纹: **同内容(uuid 字段集同)则同 uuid**, 可用于去重/引用
 - `data` 不透明: TEXT 字符串 / FILE 路径或二进制, 与角色正交
 
 ### 支撑类型(简明版, 完整见 mapdef.h)
 ```c
-typedef struct ptr_array { void** items; size_t_ count, capacity; } ptr_array;
-typedef struct node_attr { char* key; char* value; } node_attr;   // 应用端语义键
-typedef enum { DATA_TEXT, DATA_FILE } data_kind;                  // 载荷类型(不含角色)
+typedef struct map_ptr_array { void** items; map_size count, capacity; } map_ptr_array;
+typedef struct map_attr { char* key; char* value; } map_attr;   // 应用端语义键
+typedef enum { MAP_TEXT, MAP_FILE } map_data_kind;                  // 载荷类型(不含角色)
 ```
 
 ## 2. 分层边界
@@ -90,9 +90,9 @@ WS `version` 命令 + `GET /version`  →  控制台欢迎信息 / uname / ver
 ```c
 map* map_open(const char* path, const MapConfig* cfg);  // 载入或新建(不存在=空图)
 void map_close(map* m);
-node* map_root(map* m);
-int  map_set_view(map* m, node* view_root);   // 锚定根(整图= NULL)
-node* map_view(map* m);
+map_node* map_root(map* m);
+int  map_set_view(map* m, map_node* view_root);   // 锚定根(整图= NULL)
+map_node* map_view(map* m);
 ```
 
 ### 会话(多连接标准方式: 共享 map 实例, 每连接一个会话)
@@ -115,25 +115,25 @@ int map_submit(map* m, ..., done_cb, ud);                      // 异步(engine 
 
 ### 查询(直接 C 用; 应用层可只走命令)
 ```c
-node* map_find_uuid(map* m, const char* uuid);
-node* map_find_path(map* m, const char* path);
-size_t_ map_collect_subtree(map* m, node* root, node** arr, size_t_ cap);
+map_node* map_find_uuid(map* m, const char* uuid);
+map_node* map_find_path(map* m, const char* path);
+map_size map_collect_subtree(map* m, map_node* root, map_node** arr, map_size cap);
 ```
 
 ### 图操作(node 级, 原子件)
 ```c
-node* map_node_new(data_kind, void* data, size_t_ len);   // TEXT 自动 strlen
-void  map_node_free(node* n);
-int   link_parent_child(node* parent, node* child);
-int   link_neighbor(node* a, node* b);
-int   unlink_neighbor(node* a, node* b);
-node* edge_connect(node* a, node* b);                            // 空边
-node* edge_connect_with(node* a, node* b, void* data, size_t_ l); // 带载荷边
-int   edge_end_add(node* e, node* n, int side);                   // 加端点(幂等) side: 0=A 1=B
-int   edge_end_del(node* e, node* n, int side);                   // 减端点, 返回 1=原本不在
-int   node_is_edge(const node* n);                                // 结构判定
-int   node_attr_set(node* n, const char* key, const char* value); // NULL/空=删
-const char* node_attr_get(const node* n, const char* key);
+map_node* map_node_new(map_data_kind, void* data, map_size len);   // TEXT 自动 strlen
+void  map_node_free(map_node* n);
+int   map_link_parent_child(map_node* parent, map_node* child);
+int   map_link_neighbor(map_node* a, map_node* b);
+int   map_unlink_neighbor(map_node* a, map_node* b);
+map_node* map_edge_connect(map_node* a, map_node* b);                            // 空边
+map_node* map_edge_connect_with(map_node* a, map_node* b, void* data, map_size l); // 带载荷边
+int   map_edge_end_add(map_node* e, map_node* n, int side);                   // 加端点(幂等) side: 0=A 1=B
+int   map_edge_end_del(map_node* e, map_node* n, int side);                   // 减端点, 返回 1=原本不在
+int   map_node_is_edge(const map_node* n);                                // 结构判定
+int   map_attr_set(map_node* n, const char* key, const char* value); // NULL/空=删
+const char* map_attr_get(const map_node* n, const char* key);
 ```
 
 ### 存档
@@ -145,8 +145,8 @@ int map_load(map* m, const char* path);   // 向已有实例载入(替换 root)�
 ### 并发/钩子
 ```c
 map_lock_read/write + map_unlock_read/write;   // 图级 SRWLock/pthread_rwlock
-map_engine* engine_create(opt); attach_map / submit / destroy;  // worker 线程池
-int map_emit(map* m, evt, node* arg);          // on_change 钩子触发点
+map_engine* map_engine_create(opt); attach_map / submit / destroy;  // worker 线程池
+int map_emit(map* m, evt, map_node* arg);          // on_change 钩子触发点
 ```
 `MapConfig`: `base.max_workers`(线程池大小) / `enable_index` / `enable_trash` /
 `hooks->on_change`(应用端挂: 变更→自动保存/广播)、`index_fn`/`store_fn`(可插拔)。
@@ -178,7 +178,7 @@ int map_emit(map* m, evt, node* arg);          // on_change 钩子触发点
 
 - **路径**: `/` 分隔, 空串=锚定根, 段匹配节点 data(TEXT); `uuid:<64hex>` 绕过名字。
 - **锚定**: 会话 `view_root` 限定一切命令作用域(权限收缩点, 应用层 attach 后设置)。
-- **边角色**: `node_is_edge` = 两端集合都非空(结构判定, 载荷类型随意)。
+- **边角色**: `map_node_is_edge` = 两端集合都非空(结构判定, 载荷类型随意)。
 - **uuid**: 内容寻址指纹; attrs 非空才计入(旧档兼容); load 保留原 uuid。
 - **隐藏语义**: `attrs.hidden=1` → graphjson `sys:1`(前端过滤; 旧档 reserved 自动迁移)。
 - **存档格式**: 明文 JSON(嵌套 children + 顶层 edges), 兼容旧 .map。
@@ -188,7 +188,7 @@ int map_emit(map* m, evt, node* arg);          // on_change 钩子触发点
 
 ```c
 map_evt_kind: MAP_EVT_CREATE/EDIT/ATTR/LINK/UNLINK/DELETE/SAVE
-int (*on_change)(map* m, map_evt_kind evt, node* arg, void* ud);
+int (*on_change)(map* m, map_evt_kind evt, map_node* arg, void* ud);
 ```
 - 命令执行后粗粒度触发(当前: `MAP_EVT_SAVE` 后统一通知)。
 - 应用端典型用途: 防抖自动保存、WS 广播给其他客户端、审计日志。
@@ -206,4 +206,4 @@ int (*on_change)(map* m, map_evt_kind evt, node* arg, void* ud);
 ## 6. 扩展位(预留)
 
 `MapConfig.enable_trash`(延迟回收)/ `index_fn`(替换索引)/ `store_fn`(自定义存档器)/
-`engine_submit` 的 `queue_depth` 流控 —— 均为**预留空位**, 实现待补。
+`map_engine_submit` 的 `queue_depth` 流控 —— 均为**预留空位**, 实现待补。

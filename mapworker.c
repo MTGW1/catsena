@@ -61,7 +61,7 @@ static MAP_THREAD_RET worker_loop(LPVOID arg) {
 
 /* ---- 引擎生命周期 ---- */
 
-map_engine* engine_create(const MapOptions* opts) {
+map_engine* map_engine_create(const MapOptions* opts) {
     map_engine* e = (map_engine*)calloc(1, sizeof(map_engine));
     if (e == NULL) return NULL;
     if (opts != NULL) e->options = *opts;
@@ -79,7 +79,7 @@ map_engine* engine_create(const MapOptions* opts) {
     int n = e->options.max_workers;
     e->workers = (map_worker*)calloc((size_t)n, sizeof(map_worker));
     e->threads = (map_thread_t*)calloc((size_t)n, sizeof(map_thread_t));
-    if (e->workers == NULL || e->threads == NULL) { engine_destroy(e); return NULL; }
+    if (e->workers == NULL || e->threads == NULL) { map_engine_destroy(e); return NULL; }
     for (int i = 0; i < n; i++) {
         e->workers[i].worker_id = i;
         e->workers[i].active = false;
@@ -96,7 +96,7 @@ map_engine* engine_create(const MapOptions* opts) {
     return e;
 }
 
-void engine_destroy(map_engine* e) {
+void map_engine_destroy(map_engine* e) {
     if (e == NULL) return;
     // 停 worker
     if (e->queue_lock != NULL) {
@@ -122,7 +122,7 @@ void engine_destroy(map_engine* e) {
     free(e);
 }
 
-int engine_attach_map(map_engine* e, map* m) {
+int map_engine_attach_map(map_engine* e, map* m) {
     if (e == NULL || m == NULL) return -1;
     for (int i = 0; i < e->map_count; i++)
         if (e->maps[i] == m) return 0;             // 已挂, 幂等
@@ -135,7 +135,7 @@ int engine_attach_map(map_engine* e, map* m) {
     return 0;
 }
 
-int engine_submit(map_engine* e, map* m, map_cmd* cmd) {
+int map_engine_submit(map_engine* e, map* m, map_cmd* cmd) {
     if (e == NULL || m == NULL || cmd == NULL) return -1;
     if (e->options.max_workers <= 0) {
         // 单线程串行: 同步执行后完成回调
@@ -161,7 +161,7 @@ int engine_submit(map_engine* e, map* m, map_cmd* cmd) {
     return 0;   // 已入队(结果经 done 回调)
 }
 
-int engine_gc(map_engine* e) {
+int map_engine_gc(map_engine* e) {
     (void)e;
     // TODO: 回收 trash(需内核删除拦截)
     return 0;

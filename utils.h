@@ -14,9 +14,9 @@
 //  - out_outside_uuids: 输出的外部节点uuid数组(由函数分配,调用方负责释放)
 //  - out_outside_count: 输出的外部节点数量
 // 返回: 0 成功, -1 失败
-int FindSelectedNodesWithOutsideConnections(
+int map_select_exposed_nodes(
     map*         m, 
-    const node** selected_nodes, 
+    const map_node** selected_nodes, 
     size_t       selected_count, 
     char***      out_uuids, 
     size_t*      out_count, 
@@ -30,7 +30,7 @@ int FindSelectedNodesWithOutsideConnections(
 //  - node_a: 节点A
 //  - node_b: 节点B
 // 返回: 1 认识, 0 不认识, -1 错误
-int IsNodesMayKnowEachOther(map* m, const node* node_a, const node* node_b);    
+int map_nodes_may_know(map* m, const map_node* node_a, const map_node* node_b);    
 
 // 3. 我超喂我的邻居/子节点/父节点的uuid呢?
 // 输入:
@@ -41,4 +41,4 @@ int IsNodesMayKnowEachOther(map* m, const node* node_a, const node* node_b);
 //  - out_uuids: 输出的节点uuid数组(由函数分配,调用方负责释放)
 //  - out_count: 输出的节点数量
 // 返回: 0 成功, -1 失败
-int GetNodeRelatedUUIDs(const node* n, int mode, char*** out_uuids, size_t* out_count);
+int map_node_related_uuids(const map_node* n, int mode, char*** out_uuids, size_t* out_count);

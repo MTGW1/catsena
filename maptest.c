@@ -12,7 +12,7 @@
 #endif
 
 static int g_evts = 0;
-static int on_change(map* m, map_evt_kind evt, node* arg, void* ud) {
+static int on_change(map* m, map_evt_kind evt, map_node* arg, void* ud) {
     (void)m; (void)evt; (void)arg; (void)ud;
     g_evts++;
     return 0;
@@ -49,9 +49,9 @@ int main(int argc, char* argv[]) {
             char g[65536];
             map_exec(m0, "graphjson", g, sizeof(g));
             CHECK(strstr(g, "\"nodes\"") != NULL, "真实图 graphjson 输出");
-            node* r = map_root(m0);
+            map_node* r = map_root(m0);
             CHECK(r != NULL && r->uuid != NULL, "真实图 root 可访问");
-            node* hit = map_find_uuid(m0, r->uuid);
+            map_node* hit = map_find_uuid(m0, r->uuid);
             CHECK(hit == r, "真实图索引命中 root");
             map_close(m0);
         }
@@ -81,23 +81,23 @@ int main(int argc, char* argv[]) {
     map_exec(m, "neighbor 世界/角色A 世界/角色B", out, sizeof(out));
 
     // 3) 索引: find_by_uuid
-    node* a = map_find_path(m, "世界/角色A");
+    map_node* a = map_find_path(m, "世界/角色A");
     CHECK(a != NULL && a->uuid != NULL, "map_find_path 世界/角色A");
     if (a && a->uuid) {
-        node* hit = map_find_uuid(m, a->uuid);
+        map_node* hit = map_find_uuid(m, a->uuid);
         CHECK(hit == a, "map_find_uuid 索引命中(O(1))");
     }
-    const char* rare = a ? node_attr_get(a, "rare") : NULL;
+    const char* rare = a ? map_attr_get(a, "rare") : NULL;
     CHECK(rare != NULL && strcmp(rare, "6") == 0, "attr 属性可读(rare=6)");
 
     // 4) 命令后再查(懒重建)
     map_exec(m, "create 世界 角色C", out, sizeof(out));
-    node* c = map_find_path(m, "世界/角色C");
+    map_node* c = map_find_path(m, "世界/角色C");
     CHECK(c != NULL, "命令后路径查找(懒重建不破坏索引)");
 
     // 5) 子树收集
-    node* w = map_find_path(m, "世界");
-    node* arr[64];
+    map_node* w = map_find_path(m, "世界");
+    map_node* arr[64];
     size_t cnt = map_collect_subtree(m, w, arr, 64);
     CHECK(cnt >= 4, "map_collect_subtree 收集(>=4 含邻居/边)");
 
@@ -117,16 +117,16 @@ int main(int argc, char* argv[]) {
 
     // 9) 引擎挂接
     MapOptions o; memset(&o, 0, sizeof(o));
-    map_engine* e = engine_create(&o);
-    CHECK(engine_attach_map(e, m) == 0, "engine_attach_map");
-    rc = engine_submit(e, m, NULL);   // NULL cmd 应拒绝
+    map_engine* e = map_engine_create(&o);
+    CHECK(map_engine_attach_map(e, m) == 0, "engine_attach_map");
+    rc = map_engine_submit(e, m, NULL);   // NULL cmd 应拒绝
     CHECK(rc == -1, "engine_submit 参数校验");
     map_cmd* cmd = (map_cmd*)calloc(1, sizeof(map_cmd));
     cmd->text = strdup("ls 世界");
     char out4[8192]; cmd->out = out4; cmd->outsz = sizeof(out4);
-    rc = engine_submit(e, m, cmd);
+    rc = map_engine_submit(e, m, cmd);
     CHECK(rc > 0, "engine_submit 同步执行(经 map_exec)");
-    engine_destroy(e);
+    map_engine_destroy(e);
 
     // 10) save → load 回环(序列化兼容)
     map_exec(m, "save _rt.map", out, sizeof(out));
@@ -136,10 +136,10 @@ int main(int argc, char* argv[]) {
     map* m2 = map_open("_rt.map", &cfg2);
     CHECK(m2 != NULL, "回环: 重新打开存档");
     if (m2) {
-        node* a2 = map_find_path(m2, "世界/角色A");
+        map_node* a2 = map_find_path(m2, "世界/角色A");
         CHECK(a2 != NULL, "回环: 路径仍可解析");
         if (a2) {
-            const char* r2 = node_attr_get(a2, "rare");
+            const char* r2 = map_attr_get(a2, "rare");
             CHECK(r2 && strcmp(r2, "6") == 0, "回环: attrs 保留");
             CHECK(a2->neighbors.count == 1, "回环: 邻居关系保留");
         }
@@ -163,10 +163,10 @@ int main(int argc, char* argv[]) {
         MapOptions co; memset(&co, 0, sizeof(co));
         co.max_workers = 4;
         co.queue_depth = 0;
-        map_engine* ce = engine_create(&co);
+        map_engine* ce = map_engine_create(&co);
         CHECK(ce != NULL, "并发引擎创建(max_workers=4)");
         if (ce) {
-            engine_attach_map(ce, m);
+            map_engine_attach_map(ce, m);
             volatile int done_cnt = 0;
             struct ctest ctx = { &done_cnt, 20 };
             static char outs[20][512];
@@ -179,7 +179,7 @@ int main(int argc, char* argv[]) {
                 mc->outsz = sizeof(outs[i]);
                 mc->done = ctest_done;
                 mc->ud = &ctx;
-                engine_submit(ce, m, mc);
+                map_engine_submit(ce, m, mc);
             }
             // 等 20 个命令全部完成(忙等, 跨平台)
             for (int w = 0; w < 2000 && done_cnt < 20; w++) {
@@ -209,18 +209,18 @@ int main(int argc, char* argv[]) {
                 snprintf(c, sizeof(c), "del 世界/并发节点%d", i);
                 map_exec(m, c, out, sizeof(out));
             }
-            engine_destroy(ce);
+            map_engine_destroy(ce);
         }
     }
 
     // 13) 视图锚定根(应用端权限语义的基础能力)
     {
-        node* w = map_find_path(m, "世界");
+        map_node* w = map_find_path(m, "世界");
         CHECK(w != NULL, "锚定: 定位 世界 节点");
         CHECK(map_set_view(m, w) == 0, "map_set_view(世界)");
         CHECK(map_view(m) == w, "map_view 返回锚定根");
         // 锚定后 "角色A" 相对锚定根解析
-        node* a = map_find_path(m, "角色A");
+        map_node* a = map_find_path(m, "角色A");
         CHECK(a != NULL, "锚定后相对路径解析(角色A)");
         char g[8192];
         map_exec(m, "graphjson", g, sizeof(g));

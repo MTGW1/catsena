@@ -20,22 +20,22 @@ static int fails = 0;
 static const char* TMP = "test-id.map";
 
 // 建一个文字节点挂到 parent 下(data 用 strdup 并交给节点自持)
-static node* add_text(node* parent, const char* text) {
+static map_node* add_text(map_node* parent, const char* text) {
     char* s = strdup(text);
     if (!s) return NULL;
-    node* n = map_node_new(DATA_TEXT, s, 0);
+    map_node* n = map_node_new(MAP_TEXT, s, 0);
     if (!n) { free(s); return NULL; }
     n->owns_data = 1;
-    if (parent && link_parent_child(parent, n) != 0) { map_node_free(n); return NULL; }
+    if (parent && map_link_parent_child(parent, n) != 0) { map_node_free(n); return NULL; }
     return n;
 }
 
 // 按 data(标题)在子树里找节点 —— 不用 uuid, 避免受 uuid 重算影响
-static node* find_by_text(map* m, const char* text) {
-    node* arr[64];
+static map_node* find_by_text(map* m, const char* text) {
+    map_node* arr[64];
     size_t n = map_collect_subtree(m, map_root(m), arr, 64);
     for (size_t i = 0; i < n; i++) {
-        node* x = arr[i];
+        map_node* x = arr[i];
         if (x->data && x->data_len > 0 && strcmp((const char*)x->data, text) == 0) return x;
     }
     return NULL;
@@ -59,21 +59,21 @@ int main(void) {
         map* m = map_open(TMP, &cfg);          // 文件不存在 → 空图
         CHECK(m != NULL && map_root(m) != NULL, "map_open(空图)");
         if (!m) return 1;
-        node* root = map_root(m);
+        map_node* root = map_root(m);
         for (int i = 0; i < NV; i++) {
-            node* n = add_text(root, names[i]);
+            map_node* n = add_text(root, names[i]);
             if (!n) { printf("  FAIL 建节点 %s\n", names[i]); return 1; }
         }
-        node* a = find_by_text(m, "立项");
-        node* b = find_by_text(m, "评审");
-        node* e = edge_connect_with(a, b, strdup("先后"), 6);
-        CHECK(e != NULL && node_is_edge(e), "建边节点");
-        node_attr_set(e, "view", "range");      // 边也可以带渲染标签(载荷与角色正交)
+        map_node* a = find_by_text(m, "立项");
+        map_node* b = find_by_text(m, "评审");
+        map_node* e = map_edge_connect_with(a, b, strdup("先后"), 6);
+        CHECK(e != NULL && map_node_is_edge(e), "建边节点");
+        map_attr_set(e, "view", "range");      // 边也可以带渲染标签(载荷与角色正交)
 
         // 基线必须在"图结构稳定之后"取: 连边会改端点的边计数 → 端点 uuid 会变
         //   (这正是 uuid 不能做视图态 key 的理由 —— id 不受影响)
         for (int i = 0; i < NV; i++) {
-            node* n = find_by_text(m, names[i]);
+            map_node* n = find_by_text(m, names[i]);
             id0[i] = n->id;
             snprintf(uuid0[i], sizeof(uuid0[i]), "%s", n->uuid ? n->uuid : "");
         }
@@ -104,7 +104,7 @@ int main(void) {
         printf("       [重开] root=%.12s childs=%d\n",
                map_root(m)->uuid ? map_root(m)->uuid : "(null)", (int)map_root(m)->childs.count);
         for (int i = 0; i < NV; i++) {
-            node* n = find_by_text(m, names[i]);
+            map_node* n = find_by_text(m, names[i]);
             if (!n) { printf("  FAIL 重开后找不到 %s\n", names[i]); fails++; same = 0; continue; }
             if (n->id != id0[i]) {
                 printf("       %s: id %llu → %llu\n", names[i],
@@ -123,16 +123,16 @@ int main(void) {
         CHECK(same_uuid, "性质4: uuid 跨存档稳定(内容寻址不受影响)");
 
         // ---- 阶段 3: 编辑内容 → uuid 变, id 不变(性质 2) ----
-        node* n = find_by_text(m, "评审");
+        map_node* n = find_by_text(m, "评审");
         char old_uuid[65];
         snprintf(old_uuid, sizeof(old_uuid), "%s", n->uuid ? n->uuid : "");
         uint64_t old_id = n->id;
-        node_attr_set(n, "at", "96");            // 语义编辑(进指纹)
+        map_attr_set(n, "at", "96");            // 语义编辑(进指纹)
         CHECK(n->id == old_id, "性质2: 编辑后 id 不变");
         CHECK(n->uuid && strcmp(n->uuid, old_uuid) != 0, "性质4: 编辑后 uuid 改变");
 
         // ---- 阶段 4: 新建节点 id 不撞车(性质 3) ----
-        node* fresh = add_text(map_root(m), "新增");
+        map_node* fresh = add_text(map_root(m), "新增");
         CHECK(fresh != NULL && fresh->id > maxid,
               "性质3: 还原存档后新建节点 id > 所有已还原 id");
 
@@ -145,14 +145,14 @@ int main(void) {
         cfg.base.max_workers = 0;
         map* m = map_open(TMP, &cfg);
         if (m) {
-            node* n2 = add_text(map_root(m), "再存");
+            map_node* n2 = add_text(map_root(m), "再存");
             CHECK(n2 != NULL, "二次编辑建节点");
             uint64_t keep = n2 ? n2->id : 0;
             map_save(m, TMP);
             map_close(m);
 
             map* m2 = map_open(TMP, &cfg);
-            node* back = m2 ? find_by_text(m2, "再存") : NULL;
+            map_node* back = m2 ? find_by_text(m2, "再存") : NULL;
             CHECK(back != NULL && back->id == keep, "链式存取后 id 依然稳定");
             if (m2) map_close(m2);
         } else {

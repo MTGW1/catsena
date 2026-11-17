@@ -16,7 +16,7 @@ Catsena 把「图」当成唯一的数据模型，除此之外什么都不理解
 于是"给关系挂属性"和"给节点挂属性"是同一件事，不存在第二套 API。
 
 **② 两端都是集合。** 普通关系各 1 个端点；一对多 = A 端 1 个；**共享边 = 两端多个**。
-`edge_end_add` / `edge_end_del` 幂等，某端摘空则边自动不再成立。
+`map_edge_end_add` / `map_edge_end_del` 幂等，某端摘空则边自动不再成立。
 
 **③ uuid = 内容指纹。** 节点的 uuid 是"除 id/uuid 外全部字段"的 SHA256 ——
 **同内容必然同 uuid**，去重、引用、缓存校验全部白送。
@@ -86,10 +86,15 @@ print(lib.map_version())             # b"0.1.0"
 | 命令 | `map_exec`（同步） `map_submit`（入队，worker 线程） |
 | 锁 | `map_lock_read/write` `map_unlock_read/write` |
 | 遍历 | `map_find_uuid` `map_find_path` `map_collect_subtree` `map_gc` `map_emit` |
-| node 级 | `map_node_new` `map_node_free` `node_is_edge` `link_parent_child` `edge_end_add/del` `node_attr_set/get` … |
-| 底层 | `sha256`（内建，标准向量自测） |
+| node 级 | `map_node_new` `map_node_free` `map_node_is_edge` `map_link_parent_child` `map_edge_end_add/del` `map_attr_set/get` … |
+| 底层 | `map_sha256`（内建，标准向量自测） |
 
 内核内部函数不属于接口，变更不通知 —— 见 `API.md` 开头的契约声明。
+
+**符号前缀约定**：公开面一律以 `map_` 开头（类型 `map_node` / `map_attr` / `map_ptr_array`，
+函数 `map_*`），**裸符号为零** —— 与别的库放进同一个 TU 链接不会撞。
+`tools/rename_symbols.py` 记录了补前缀的完整映射表，以及为什么必须用带字符串/注释边界的
+扫描而不是正则替换：`.map` 存档的 JSON 键里就有 `node`，改了存档就废。
 
 ---
 
@@ -126,7 +131,7 @@ print(lib.map_version())             # b"0.1.0"
 
 ```
 map.c map.h          图模型 + 全部导出 API（~1900 行）
-mapdef.h             node / ptr_array / node_attr / data_kind
+mapdef.h             map_node / map_ptr_array / map_attr / map_data_kind
 mapworker.c/.h       worker 线程池 + 命令队列骨架
 platform.h           平台层（Windows crypto / POSIX 差异收口）
 utils.c/.h           字符串/数组工具

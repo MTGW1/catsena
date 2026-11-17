@@ -20,65 +20,65 @@
 #ifndef __SIZE_TYPE__
 #  define __SIZE_TYPE__ unsigned long long
 #endif
-typedef __SIZE_TYPE__ size_t_;
+typedef __SIZE_TYPE__ map_size;
 
 /* ================= 节点部件(前置微型定义) ================= */
 
 /* ptr_array: 动态指针数组(节点容器, 与大小写无关的通用工具) */
 typedef struct {
     void**    items;    // 指针数组(可为 NULL)
-    size_t_   count;    // 已用指针数
-    size_t_   capacity; // 分配容量(指针数)
-} ptr_array;
+    map_size   count;    // 已用指针数
+    map_size   capacity; // 分配容量(指针数)
+} map_ptr_array;
 
 /* node_attr: 语义键值对 —— 应用端识别, 内核只存不解释。
    约定(见 THEMAP_ARCH.md): role=page / role=axis / grant:<项目> / setting:<k>
    计入 uuid 指纹(仅非空时), 随序列化落盘 */
-typedef struct node_attr {
+typedef struct map_attr {
     char* key;
     char* value;
-} node_attr;
+} map_attr;
 
 /* data_kind: 载荷类型 —— 只表达"内容是什么"。
    拓扑角色(是否边节点)由结构判定(node_is_edge: 两端集合都非空),
    载荷与角色正交, 不混入类型枚举 */
 typedef enum {
-    DATA_TEXT,    /* 文字 */
-    DATA_FILE,    /* 文件(路径/URL/二进制) */
-} data_kind;
+    MAP_TEXT,    /* 文字 */
+    MAP_FILE,    /* 文件(路径/URL/二进制) */
+} map_data_kind;
 
 /* ================= 核心: 节点定义 ================= */
 /* 前向声明: 让 node 类型在结构体内部可用(边节点自引用需要) */
-typedef struct node node;
+typedef struct map_node map_node;
 
 /* node = 图的基本单元, 既是数据容器也是关系端点。
     - 边也是节点(edge_as/edge_bs 承载两端), 由结构判定非类型
     - 多父/共享(DAG)由 alive 位防二次释放
     - uuid = 除 id/uuid 外全部字段的 SHA256 指纹(内容寻址) */
-struct node {
+struct map_node {
     uint64_t     id;
-    data_kind    dtype;      /* 载荷类型(TEXT/FILE) */
+    map_data_kind    dtype;      /* 载荷类型(TEXT/FILE) */
     void*        data;       /* 不透明载荷 */
     unsigned     owns_data : 1; /* data 是否由节点自持: 1=destroy 时 free */
     unsigned     alive : 1;     /* 1=活跃; DAG(多父/共享)下防二次释放 */
-    size_t_      data_len;   /* data 字节长度(TEXT=strlen) */
-    char*        sha256;     /* data 的 SHA256, hex(可为 NULL: 二进制未知) */
+    map_size      data_len;   /* data 字节长度(TEXT=strlen) */
+    char*        map_sha256;     /* data 的 SHA256, hex(可为 NULL: 二进制未知) */
 
     /* 关系(指针集合) */
-    ptr_array neighbors;   /* 邻节点(无向) */
-    ptr_array childs;      /* 子节点(有向被指向端) */
-    ptr_array parents;     /* 父节点(有向指向端) */
-    ptr_array edges;       /* 边节点列表 */
+    map_ptr_array neighbors;   /* 邻节点(无向) */
+    map_ptr_array childs;      /* 子节点(有向被指向端) */
+    map_ptr_array parents;     /* 父节点(有向指向端) */
+    map_ptr_array edges;       /* 边节点列表 */
     // char*    conn;         /* 邻/子/父节点的uuid列表, 仅供查找 */      // TODO
     /* 边节点专用: 两端都是**集合**, 不是单指针。
        普通关系 = 两端各 1 个; 一对多(收纳/分组) = A 端 1 个; 共享边 = 两端都多个。
        全部形态共用同一个结构, 不设"单边/超边"两种模式。
        角色判定(内容判定式): 两端都非空即边节点 —— 见 node_is_edge。 */
-    ptr_array edge_as;     /* 主体端(发出侧) */
-    ptr_array edge_bs;     /* 客体端(指向侧) */
+    map_ptr_array edge_as;     /* 主体端(发出侧) */
+    map_ptr_array edge_bs;     /* 客体端(指向侧) */
 
     /* 属性表(node_attr*) —— 应用端语义识别 */
-    ptr_array attrs;
+    map_ptr_array attrs;
 
     char*    uuid;       /* 唯一标识 = 除 id/uuid/conn 外字段的 SHA256 指纹 */
 };   /* 定义见上方 typedef struct node node; —— 末尾不再重复 typedef */

@@ -25,19 +25,19 @@ static int strarr_push(char*** arr, size_t* count, size_t* cap, const char* str)
 
 // ---------- 内部辅助：节点指针集合（线性探测） ----------
 typedef struct {
-    node** items;
+    map_node** items;
     size_t count;
     size_t cap;
 } node_set;
 
-static int node_set_add(node_set* s, node* n) {
+static int node_set_add(node_set* s, map_node* n) {
     if (!s || !n) return -1;
     for (size_t i = 0; i < s->count; i++) {
         if (s->items[i] == n) return 0;
     }
     if (s->count >= s->cap) {
         size_t newcap = (s->cap == 0) ? 64 : s->cap * 2;
-        node** tmp = (node**)realloc((void*)s->items, newcap * sizeof(node*));
+        map_node** tmp = (map_node**)realloc((void*)s->items, newcap * sizeof(map_node*));
         if (!tmp) return -1;
         s->items = tmp;
         s->cap = newcap;
@@ -46,7 +46,7 @@ static int node_set_add(node_set* s, node* n) {
     return 0;
 }
 
-static int node_set_contains(const node_set* s, const node* n) {
+static int node_set_contains(const node_set* s, const map_node* n) {
     for (size_t i = 0; i < s->count; i++) {
         if (s->items[i] == n) return 1;
     }
@@ -65,9 +65,9 @@ static void node_set_free(node_set* s) {
 // ============================================================================
 // 1. 找选定节点中“有外部连接”的节点，以及所有外部邻居的 UUID（去重）
 // ============================================================================
-int FindSelectedNodesWithOutsideConnections(
+int map_select_exposed_nodes(
     map*         m,
-    const node** selected_nodes,
+    const map_node** selected_nodes,
     size_t       selected_count,
     char***      out_uuids,
     size_t*      out_count,
@@ -87,7 +87,7 @@ int FindSelectedNodesWithOutsideConnections(
 
     // 构建内部集合
     for (size_t i = 0; i < selected_count; i++) {
-        node* n = (node*)selected_nodes[i];
+        map_node* n = (map_node*)selected_nodes[i];
         if (n) {
             if (node_set_add(&inside, n) != 0) goto cleanup;
         }
@@ -95,13 +95,13 @@ int FindSelectedNodesWithOutsideConnections(
 
     // 遍历内部节点检查关系
     for (size_t i = 0; i < inside.count; i++) {
-        node* cur = inside.items[i];
+        map_node* cur = inside.items[i];
         int has_outside = 0;
 
-        ptr_array* rels[4] = { &cur->neighbors, &cur->parents, &cur->childs, &cur->edges };
+        map_ptr_array* rels[4] = { &cur->neighbors, &cur->parents, &cur->childs, &cur->edges };
         for (int r = 0; r < 4 && !has_outside; r++) {
             for (size_t j = 0; j < rels[r]->count; j++) {
-                node* rel = (node*)rels[r]->items[j];
+                map_node* rel = (map_node*)rels[r]->items[j];
                 if (!rel) continue;
                 if (!node_set_contains(&inside, rel)) {
                     has_outside = 1;
@@ -156,48 +156,48 @@ cleanup:
 // ============================================================================
 // 2. 两个节点是否在同一张子图（无向连通）
 // ============================================================================
-int IsNodesMayKnowEachOther(map* m, const node* node_a, const node* node_b) {
+int map_nodes_may_know(map* m, const map_node* node_a, const map_node* node_b) {
     if (!m || !node_a || !node_b) return -1;
     if (node_a == node_b) return 1;
 
     node_set visited = {0};
-    node** stack = NULL;
+    map_node** stack = NULL;
     size_t stack_cap = 0, stack_count = 0;
     int ret = 0;
 
     #define PUSH(n) do { \
         if (!(n)) break; \
         if (node_set_contains(&visited, (n))) break; \
-        if (node_set_add(&visited, (node*)(n)) != 0) goto cleanup; \
+        if (node_set_add(&visited, (map_node*)(n)) != 0) goto cleanup; \
         if (stack_count >= stack_cap) { \
             size_t nc = (stack_cap == 0) ? 64 : stack_cap * 2; \
-            node** tmp = (node**)realloc((void*)stack, nc * sizeof(node*)); \
+            map_node** tmp = (map_node**)realloc((void*)stack, nc * sizeof(map_node*)); \
             if (!tmp) goto cleanup; \
             stack = tmp; \
             stack_cap = nc; \
         } \
-        stack[stack_count++] = (node*)(n); \
+        stack[stack_count++] = (map_node*)(n); \
     } while(0)
 
     PUSH(node_a);
 
     while (stack_count > 0) {
-        node* cur = stack[--stack_count];
+        map_node* cur = stack[--stack_count];
         if (cur == node_b) { ret = 1; goto cleanup; }
-        ptr_array* rels[4] = { &cur->neighbors, &cur->parents, &cur->childs, &cur->edges };
+        map_ptr_array* rels[4] = { &cur->neighbors, &cur->parents, &cur->childs, &cur->edges };
         for (int r = 0; r < 4; r++) {
             for (size_t i = 0; i < rels[r]->count; i++) {
-                node* rel = (node*)rels[r]->items[i];
+                map_node* rel = (map_node*)rels[r]->items[i];
                 if (rel) PUSH(rel);
             }
         }
         // 边节点: 两端都是集合, 全部推进栈(1→N / 共享边都算连通)
         for (size_t i = 0; i < cur->edge_as.count; i++) {
-            node* e = (node*)cur->edge_as.items[i];
+            map_node* e = (map_node*)cur->edge_as.items[i];
             if (e) PUSH(e);
         }
         for (size_t i = 0; i < cur->edge_bs.count; i++) {
-            node* e = (node*)cur->edge_bs.items[i];
+            map_node* e = (map_node*)cur->edge_bs.items[i];
             if (e) PUSH(e);
         }
     }
@@ -213,7 +213,7 @@ cleanup:
 // ============================================================================
 // 4. 获取节点相关 UUID（邻居/子/父，组合）
 // ============================================================================
-int GetNodeRelatedUUIDs(const node* n, int mode, char*** out_uuids, size_t* out_count) {
+int map_node_related_uuids(const map_node* n, int mode, char*** out_uuids, size_t* out_count) {
     if (!n || !out_uuids || !out_count) return -1;
     int include_neighbors = (mode & 1) != 0;
     int include_childs    = (mode & 2) != 0;
@@ -225,7 +225,7 @@ int GetNodeRelatedUUIDs(const node* n, int mode, char*** out_uuids, size_t* out_
 
     #define ADD_REL(rel_array) do { \
         for (size_t i = 0; i < (rel_array)->count; i++) { \
-            node* rel = (node*)(rel_array)->items[i]; \
+            map_node* rel = (map_node*)(rel_array)->items[i]; \
             if (rel && rel->uuid) { \
                 if (strarr_push(&result, &count, &cap, rel->uuid) != 0) goto cleanup; \
             } \

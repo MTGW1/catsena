@@ -41,7 +41,7 @@ typedef enum {
 
 /* 回调签名: 应用端注册, 内核在对应时机调用(已持锁, 回调内禁止再取锁)。
    返回非 0 可拒绝该操作(如权限校验失败 → 命令报错回滚)。 */
-typedef int (*map_hook_fn)(map* m, map_evt_kind evt, node* arg, void* ud);
+typedef int (*map_hook_fn)(map* m, map_evt_kind evt, map_node* arg, void* ud);
 
 struct map_hooks {
     map_hook_fn on_change;   /* 通用变更(简化版: 所有事件都走它; 精细版看 evt) */
@@ -52,11 +52,11 @@ struct map_hooks {
 
 struct map_index {
     /* 建立/维护索引: 节点增删改时内核调用 */
-    int  (*upsert)(map* m, node* n);
-    int  (*remove)(map* m, node* n);
+    int  (*upsert)(map* m, map_node* n);
+    int  (*remove)(map* m, map_node* n);
     /* 查询: 命中返回节点指针(内核不接管所有权) */
-    node* (*find_by_uuid)(map* m, const char* uuid);
-    node* (*find_by_path)(map* m, const char* path);
+    map_node* (*find_by_uuid)(map* m, const char* uuid);
+    map_node* (*find_by_path)(map* m, const char* path);
     /* 释放索引 */
     void (*destroy)(map* m);
 };
@@ -73,8 +73,8 @@ struct map_store {
 /* map 实例结构(命名结构, 与 mapworker.h 前向声明 typedef struct map map; 一致)。
    内核管理生命周期; 应用端可经 map_* API 访问, 也可直读只读字段。 */
 typedef struct map {
-    node  self;          /* 图自身(容器节点) */
-    node* root;          /* 根节点(项目根) */
+    map_node  self;          /* 图自身(容器节点) */
+    map_node* root;          /* 根节点(项目根) */
     void* all_nodes;     /* 所有节点的集合(哈希表/其他结构, 内核或应用端挂接) */
     void* index;         /* 节点索引(可插拔: map_index 函数表 + 此句柄) */
     void* lock_nodes;    /* 节点锁(多线程节点访问控制; lock_granularity=1 时启用) */
@@ -89,7 +89,7 @@ typedef struct map {
     map_engine*      engine;    /* 所属引擎(engine_attach_map 后非 NULL) */
     void*            lock;      /* 图级读写锁(SRWLock*) */
     void*            app_ctx;   /* 内部实现细节: 旧内核 map_app*(load_map/create_map 结果) */
-    node*            view_root; /* 视图锚定根(NULL=整图; 应用端权限语义用) */
+    map_node*            view_root; /* 视图锚定根(NULL=整图; 应用端权限语义用) */
 } map;
 
 /* 打开(或新建)图实例: 载入 .map(缺省则空图), 按 config 装配索引/钩子/worker。
@@ -108,13 +108,13 @@ int         map_abi(void);         /* 1 —— 接口不兼容地变了才加 */
 void map_close(map* m);
 
 /* 根节点(图自身容器, data=图名)。 */
-node* map_root(map* m);
+map_node* map_root(map* m);
 
 /* 视图锚定根(纯图能力): 把命令路径解析锚定到指定节点(如项目子树/授权根)。
    NULL = 整图(默认)。应用端权限语义用它表达"会话授权根", 内核不解释含义。 */
-int map_set_view(map* m, node* view_root);
+int map_set_view(map* m, map_node* view_root);
 /* 当前锚定根(NULL=整图)。 */
-node* map_view(map* m);
+map_node* map_view(map* m);
 
 /* ---- 会话视图(多连接共享同一 map 实例的标准方式) ----
    map 实例是进程共享的(一份内存图, 读写锁保护);
@@ -152,11 +152,11 @@ int map_unlock_write(map* m);
 /* ---- 查询(内核基础遍历; 复杂查询由应用端用钩子/命令挂接) ---- */
 
 /* 按 uuid 精确查找(走 index_fn 或默认遍历)。 */
-node* map_find_uuid(map* m, const char* uuid);
+map_node* map_find_uuid(map* m, const char* uuid);
 /* 按路径从 root 解析(走 index_fn 或默认遍历)。 */
-node* map_find_path(map* m, const char* path);
+map_node* map_find_path(map* m, const char* path);
 /* 子树收集: 沿 child 链收集到 arr(上限 cap), 返回数量。 */
-size_t_ map_collect_subtree(map* m, node* root, node** arr, size_t_ cap);
+map_size map_collect_subtree(map* m, map_node* root, map_node** arr, map_size cap);
 
 /* ---- 垃圾回收(enable_trash 时生效) ---- */
 
@@ -165,39 +165,39 @@ int map_gc(map* m);
 
 /* ---- 变更通知辅助(应用端可直接调用触发钩子) ---- */
 
-int map_emit(map* m, map_evt_kind evt, node* arg);
+int map_emit(map* m, map_evt_kind evt, map_node* arg);
 
 /* ---- node 级 API(图操作底层, 命令层 map_exec 的原子件) ---- */
 
 /* 建节点(data 外部所有, owns_data=0; TEXT 自动 strlen; 自动算 sha256+uuid) */
-node* map_node_new(data_kind dtype, void* data, size_t_ data_len);
+map_node* map_node_new(map_data_kind dtype, void* data, map_size data_len);
 /* 声明某个 id 已被占用(载入存档还原 id 之后必调; 保证新建节点 id 不撞车)。
    id = 持久句柄(内容变不变, 变), uuid = 内容指纹; 分工见 DATA_MODEL.md §1。 */
 void  map_node_reserve_id(uint64_t used_id);
 /* 计算/重算 uuid(除 id/uuid 外字段指纹, 含 attrs; 调用方接管) */
-char* node_compute_uuid(const node* n);
+char* map_node_uuid(const map_node* n);
 /* 释放节点(摘除全部关系 + 递归释放子树) */
-void map_node_free(node* n);
+void map_node_free(map_node* n);
 /* 边角色判定(内容判定式): 两端集合都非空即边(载荷类型与角色正交) */
-int  node_is_edge(const node* n);
+int  map_node_is_edge(const map_node* n);
 /* 双向父子链接 / 无向邻接(断开) / 边节点 */
-int  link_parent_child(node* parent, node* child);
-int  link_neighbor(node* a, node* b);
-int  unlink_neighbor(node* a, node* b);
-node* edge_connect(node* a, node* b);                              /* 空边(载荷 NULL) */
-node* edge_connect_with(node* a, node* b, void* data, size_t len); /* 带载荷边(data 外部所有) */
+int  map_link_parent_child(map_node* parent, map_node* child);
+int  map_link_neighbor(map_node* a, map_node* b);
+int  map_unlink_neighbor(map_node* a, map_node* b);
+map_node* map_edge_connect(map_node* a, map_node* b);                              /* 空边(载荷 NULL) */
+map_node* map_edge_connect_with(map_node* a, map_node* b, void* data, size_t len); /* 带载荷边(data 外部所有) */
 /* 边端点集合: 边两端都是集合(1→N / 共享边同一结构)。
    side: 0 = 主体(A, 发出侧) / 1 = 客体(B, 指向侧)。add 幂等, del 返回 1 = 原本不在。 */
-int  edge_end_add(node* e, node* n, int side);
-int  edge_end_del(node* e, node* n, int side);
+int  map_edge_end_add(map_node* e, map_node* n, int side);
+int  map_edge_end_del(map_node* e, map_node* n, int side);
 /* 属性读写(值 NULL/空串 = 删; 变更重算 uuid) */
-int  node_attr_set(node* n, const char* key, const char* value);
-const char* node_attr_get(const node* n, const char* key);
+int  map_attr_set(map_node* n, const char* key, const char* value);
+const char* map_attr_get(const map_node* n, const char* key);
 /* 按路径从 root 解析("" = root; "a/b/c") */
-node* find_node_by_path(node* root, const char* path);
+map_node* map_find_node_by_path(map_node* root, const char* path);
 /* 存档(明文 JSON, 格式兼容旧 .map) */
 int map_save(map* m, const char* path);
 
-int sha256(const char* data, size_t len, char* out_hex);
+int map_sha256(const char* data, size_t len, char* out_hex);
 
 #endif /* MAP_H */

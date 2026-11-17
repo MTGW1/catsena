@@ -40,7 +40,7 @@ typedef struct map_worker {
     map*            map_instance;  /* 指向图实例 */
     int             worker_id;     /* 线程唯一标识 */
     void*           thread_ctx;    /* 线程局部(如 per-thread 节点缓存) */
-    node*           current_node;  /* 当前处理节点(调试/统计) */
+    map_node*           current_node;  /* 当前处理节点(调试/统计) */
     bool            active;        /* 是否在跑命令 */
     void*           handle;        /* OS 线程句柄(实现细节) */
 } map_worker;
@@ -71,8 +71,8 @@ typedef struct map_engine {
 
 /* 回收站条目(内核内部, 应用端只通过 map_gc 触发) */
 struct map_trash_entry {
-    char*   sha256;     /* 已删节点的指纹(调试/统计用) */
-    node*   node;       /* 待释放节点 */
+    char*   map_sha256;     /* 已删节点的指纹(调试/统计用) */
+    map_node*   map_node;       /* 待释放节点 */
     uint64_t retired_at;/* 删除时刻(供延迟策略参考) */
     struct map_trash_entry* next;
 };
@@ -80,18 +80,18 @@ struct map_trash_entry {
 /* ---- 引擎 API(实现按路线图渐进) ---- */
 
 /* 创建引擎实例。返回新引擎; 失败 NULL。 */
-map_engine* engine_create(const MapOptions* opts);
+map_engine* map_engine_create(const MapOptions* opts);
 
 /* 销毁引擎: 停 worker、清队列、清 trash。 */
-void engine_destroy(map_engine* e);
+void map_engine_destroy(map_engine* e);
 
 /* 挂载一个图实例(通常 1 个)。 */
-int engine_attach_map(map_engine* e, map* m);
+int map_engine_attach_map(map_engine* e, map* m);
 
 /* 提交命令到队列; 无空闲 worker 时排队。max_workers=0 时同步执行。 */
-int engine_submit(map_engine* e, map* m, map_cmd* cmd);
+int map_engine_submit(map_engine* e, map* m, map_cmd* cmd);
 
 /* 回收 trash(可手动或定时触发)。 */
-int engine_gc(map_engine* e);
+int map_engine_gc(map_engine* e);
 
 #endif /* MAPWORKER_H */

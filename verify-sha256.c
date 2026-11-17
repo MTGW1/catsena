@@ -8,7 +8,7 @@ static int fails = 0;
 static void check(const char* label, const char* in, size_t len, const char* want) {
     char got[65];
     memset(got, 0, sizeof got);
-    if (sha256(in, len, got) != 0) { printf("  FAIL %s: 调用失败\n", label); fails++; return; }
+    if (map_sha256(in, len, got) != 0) { printf("  FAIL %s: 调用失败\n", label); fails++; return; }
     if (strcmp(got, want) == 0) printf("  ok   %-22s %s\n", label, got);
     else { printf("  FAIL %-22s\n       got  %s\n       want %s\n", label, got, want); fails++; }
 }
