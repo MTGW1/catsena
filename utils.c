@@ -126,6 +126,9 @@ int map_select_exposed_nodes(
     char** exposed = NULL;
     size_t exposed_count = 0, exposed_cap = 0;
     char** outside = NULL;
+    // 注意: 这两个必须在任何 goto cleanup 之前声明并初始化 —— C 里 goto 会跳过
+    // 带初始化的声明, 跳过去之后再在 cleanup 里用它就是不确定值(gcc -Wmaybe-uninitialized)。
+    size_t outside_n = 0, outside_cap = 0;
 
     // 选区（去重）
     for (size_t i = 0; i < selected_count; i++) {
@@ -157,7 +160,7 @@ int map_select_exposed_nodes(
     }
 
     // 外部节点 → uuid 数组（cap 正好等于条目数, 扩容不会发生）
-    size_t outside_n = 0, outside_cap = outside_set.count;
+    outside_cap = outside_set.count;
     if (outside_set.count > 0) {
         outside = (char**)calloc(outside_set.count, sizeof(char*));
         if (!outside) goto cleanup;

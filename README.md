@@ -171,8 +171,15 @@ Windows 的 DLL 用 `catsena.def` 精确控制导出：**51 个符号，全部�
 `catsena.def` 是生成物：改了公开头文件就跑 `make exports` 重新生成，别手改。
 `tools/genexports.py --check` 可以在 CI 里比对是否过期。
 
-> **已知限制**：Linux 的 `.so` 目前仍按默认导出（会带出 cJSON 符号）。要收敛得加
-> `-fvisibility=hidden` 并在公开声明上加可见性属性，还没做。
+Linux 用 `catsena.map`（linker version script）达到同样效果，两个平台共用
+`tools/genexports.py` 的同一份符号表。实测：
+
+| 平台 | 编译器 | 构建 | 自测 | 导出 | cJSON 泄漏 |
+|---|---|---|---|---|---|
+| Windows x64 | gcc 15.1 (MinGW) | 0 warning | 7/7 PASS | 51 | 0 |
+| Linux x86_64 | gcc 13.3 (Ubuntu 24.04) | 0 warning | 7/7 PASS | 51 | 0 |
+
+`.github/workflows/build.yml` 在 CI 里跑同样两项检查（导出数量 + 导出表是否过期）。
 
 ## 许可
 

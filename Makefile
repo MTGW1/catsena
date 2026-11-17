@@ -41,26 +41,34 @@ else
   OS_KIND := posix
 endif
 
+# 注意: make 的变量赋值会**保留行尾空格**(注释前的空格也算进值里), 所以下面这些
+# 变量行一律不留行尾注释 —— 否则 `RUN := ./` 会变成 "./    ", 展开成 "./   maptest",
+# sh 去找一个叫 "./" 的命令。cmd 容忍行首空格, 所以这个坑只在 Linux 上炸。
 ifeq ($(OS_KIND),win)
+# cmd.exe 认裸文件名(先查当前目录)
   LIB      := catsena.dll
   EXE      := .exe
-  SHARED   := -shared                # 不写 --export-all-symbols: 那会把 cJSON 一起导出
+# 不写 --export-all-symbols: 那会把 cJSON 一起导出
+  SHARED   := -shared
   LIBS     := -lws2_32 -lbcrypt
   PIC      :=
-  RUN      :=                        # cmd.exe 认裸文件名(先查当前目录)
+  RUN      :=
   RM       := del /Q
   RMERR    := 2>nul
-  DEFARG   := -Wl,catsena.def -Wl,--exclude-all-symbols   # 只导出 .def 点名的符号
+# 只导出 .def 点名的符号
+  DEFARG   := -Wl,catsena.def -Wl,--exclude-all-symbols
 else
+# sh 必须带 ./
   LIB      := catsena.so
   EXE      :=
   SHARED   := -shared -fPIC
   LIBS     := -lpthread
   PIC      := -fPIC
-  RUN      := ./                     # sh 必须带 ./
+  RUN      := ./
   RM       := rm -f
   RMERR    :=
-  DEFARG   := -Wl,--version-script=catsena.map           # .def 的 Linux 等价物
+# .def 的 Linux 等价物
+  DEFARG   := -Wl,--version-script=catsena.map
   CPPFLAGS += -D_GNU_SOURCE
 endif
 

@@ -1,0 +1,51 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    name: Linux (gcc, POSIX)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 构建 + 全部自测
+        run: make
+
+      - name: 导出面纪律(51 个 map_* / 0 个 cJSON)
+        run: |
+          n=$(nm -D --defined-only catsena.so | grep -c ' T map_')
+          c=$(nm -D --defined-only catsena.so | grep -c ' T cJSON')
+          echo "map_* = $n, cJSON = $c"
+          test "$n" = "51"
+          test "$c" = "0"
+
+      - name: 导出表是否与公开头文件一致
+        run: python3 tools/genexports.py --check
+
+      - name: FFI 烟雾测试(ctypes 加载 .so)
+        run: python3 _ffi_smoke.py
+
+  windows:
+    name: Windows (MinGW, PE)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          install: mingw-w64-x86_64-gcc make
+
+      - name: 构建 + 全部自测
+        shell: msys2 {0}
+        run: make
+
+      - name: 导出面纪律
+        shell: msys2 {0}
+        run: |
+          n=$(objdump -p catsena.dll | grep -c '+base\[')
+          c=$(objdump -p catsena.dll | grep -c 'cJSON_')
+          echo "导出条目 = $n, cJSON = $c"
+          test "$c" = "0"
