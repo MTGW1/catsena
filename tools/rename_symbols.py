@@ -60,6 +60,17 @@ CODE_EXT = (".c", ".h")
 ID_START = re.compile(r"[A-Za-z_]")
 
 
+def _sub_comment(seg, hits):
+    """注释里按词替换, 并记录命中(注释分支也要记账, 否则调用方以为没改动)"""
+    for k, v in sorted(MAP.items(), key=lambda kv: -len(kv[0])):
+        pat = re.compile(r"\b%s\b" % re.escape(k))
+        found = pat.findall(seg)
+        if found:
+            hits.extend(found)
+            seg = pat.sub(v, seg)
+    return seg
+
+
 def scan_replace(text, include_comments=False):
     """返回 (new_text, hits)。只在代码上下文替换标识符。"""
     out = []
@@ -73,8 +84,7 @@ def scan_replace(text, include_comments=False):
             j = n if j < 0 else j
             seg = text[i:j]
             if include_comments:
-                for k, v in MAP.items():
-                    seg = re.sub(r"\b%s\b" % re.escape(k), v, seg)
+                seg = _sub_comment(seg, hits)
             out.append(seg)
             i = j
             continue
@@ -84,8 +94,7 @@ def scan_replace(text, include_comments=False):
             j = n if j < 0 else j + 2
             seg = text[i:j]
             if include_comments:
-                for k, v in MAP.items():
-                    seg = re.sub(r"\b%s\b" % re.escape(k), v, seg)
+                seg = _sub_comment(seg, hits)
             out.append(seg)
             i = j
             continue

@@ -1,6 +1,6 @@
 // mapworker.c —— catsena 并发骨架: 命令队列 + worker 线程池(跨平台)
 // ============================================================================
-// max_workers=0: engine_submit 同步执行(= map_exec 直调), 应用端自行串行。
+// max_workers=0: map_engine_submit 同步执行(= map_exec 直调), 应用端自行串行。
 // max_workers>0: 启动 N 个 worker 线程, 命令入队后由空闲线程取出执行
 //   (map_exec 内部带图级读写锁 —— 写命令排他, 读命令共享)。
 // 同步原语经 platform.h 抽象: Win32(CRITICAL_SECTION+CONDITION_VARIABLE) /

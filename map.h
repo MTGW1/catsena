@@ -30,12 +30,12 @@ typedef struct {
 /* ---- 变更事件钩子(应用端特调挂接点) ---- */
 
 typedef enum {
-    MAP_EVT_CREATE,   /* 节点创建     arg=node* */
-    MAP_EVT_EDIT,     /* 字段编辑     arg=node* */
-    MAP_EVT_ATTR,     /* 属性变更     arg=node* */
-    MAP_EVT_LINK,     /* 链接建立     arg=node* (被链接节点) */
-    MAP_EVT_UNLINK,   /* 链接断开     arg=node* */
-    MAP_EVT_DELETE,   /* 节点删除     arg=node* (已摘除, 未释放) */
+    MAP_EVT_CREATE,   /* 节点创建     arg=map_node* */
+    MAP_EVT_EDIT,     /* 字段编辑     arg=map_node* */
+    MAP_EVT_ATTR,     /* 属性变更     arg=map_node* */
+    MAP_EVT_LINK,     /* 链接建立     arg=map_node* (被链接节点) */
+    MAP_EVT_UNLINK,   /* 链接断开     arg=map_node* */
+    MAP_EVT_DELETE,   /* 节点删除     arg=map_node* (已摘除, 未释放) */
     MAP_EVT_SAVE,     /* 存档完成     arg=NULL */
 } map_evt_kind;
 
@@ -86,7 +86,7 @@ typedef struct map {
 
     /* 装配(内核填, 由 map_open 按 MapConfig 设置) */
     MapConfig        config;    /* 本实例配置(含挂接点) */
-    map_engine*      engine;    /* 所属引擎(engine_attach_map 后非 NULL) */
+    map_engine*      engine;    /* 所属引擎(map_engine_attach_map 后非 NULL) */
     void*            lock;      /* 图级读写锁(SRWLock*) */
     void*            app_ctx;   /* 内部实现细节: 旧内核 map_app*(load_map/create_map 结果) */
     map_node*            view_root; /* 视图锚定根(NULL=整图; 应用端权限语义用) */
@@ -167,9 +167,9 @@ int map_gc(map* m);
 
 int map_emit(map* m, map_evt_kind evt, map_node* arg);
 
-/* ---- node 级 API(图操作底层, 命令层 map_exec 的原子件) ---- */
+/* ---- map_node 级 API(图操作底层, 命令层 map_exec 的原子件) ---- */
 
-/* 建节点(data 外部所有, owns_data=0; TEXT 自动 strlen; 自动算 sha256+uuid) */
+/* 建节点(data 外部所有, owns_data=0; TEXT 自动 strlen; 自动算 map_sha256+uuid) */
 map_node* map_node_new(map_data_kind dtype, void* data, map_size data_len);
 /* 声明某个 id 已被占用(载入存档还原 id 之后必调; 保证新建节点 id 不撞车)。
    id = 持久句柄(内容变不变, 变), uuid = 内容指纹; 分工见 DATA_MODEL.md §1。 */

@@ -1,6 +1,6 @@
 // map.c —— catsena 独立图内核实现(不依赖旧内核 graph.c/ui.c)
 // ============================================================================
-// 纯净模型: node(数据+attrs+关系) + 命令层(图操作, 无业务语义) + 序列化。
+// 纯净模型: map_node(数据+attrs+关系) + 命令层(图操作, 无业务语义) + 序列化。
 // 时间线/页面/权限等语义由应用端经 attrs 识别(见 THEMAP_ARCH.md)。
 // 序列化格式与旧 .map 兼容(同构 JSON) —— 可直接读现有存档(时间字段忽略)。
 // ============================================================================
@@ -259,7 +259,7 @@ static void feed_attrs(sha256_ctx* c, const map_ptr_array* attrs) {
     free((void*)arr);
 }
 
-/* ================= node 生命周期 ================= */
+/* ================= map_node 生命周期 ================= */
 
 /* 进程级 id 分配器(文件作用域: 载入存档时要把游标推到已还原 id 之上) */
 static volatile uint64_t g_next_id = 1;
@@ -330,7 +330,7 @@ char* map_node_uuid(const map_node* n) {
     //   兼容: 旧档只有单个 edge_a/edge_b, 读进来就是两端各 1 个 → 旧边指纹不变。
     feed_ref_uuids(&ctx, &n->edge_as);
     feed_ref_uuids(&ctx, &n->edge_bs);
-    // 属性(node_attr, 排序后喂入)
+    // 属性(map_attr, 排序后喂入)
     feed_attrs(&ctx, &n->attrs);
     uint8_t hash[32];
     sha256_final(&ctx, hash);
@@ -373,11 +373,11 @@ void refresh_uuid(map_node* n) {
 }
 
 /* 改写节点载荷(data 交由节点自持) —— 指纹的两个输入必须同步:
-     sha256 = SHA256(data)        指纹里喂了 data_len 和 sha256
+     map_sha256 = SHA256(data)        指纹里喂了 data_len 和 map_sha256
      uuid   = 重算(并向下传播)
    直接写 n->data 而不更新这两样 = 身份与内容不符: 本次会话看不出来, 但
    存档 → 重开时 refresh_uuid 会按真实内容重算 → 整棵子树 uuid 漂移。
-   (实测踩过: map_open 挂图名时漏了 sha256, 5 节点的图重开后 5/5 uuid 全变) */
+   (实测踩过: map_open 挂图名时漏了 map_sha256, 5 节点的图重开后 5/5 uuid 全变) */
 static void node_adopt_data(map_node* n, char* data, size_t len) {
     if (n == NULL) return;
     if (n->owns_data && n->data != NULL) free(n->data);
@@ -532,7 +532,7 @@ static map_ptr_array* edge_side(map_node* e, int side) {
 
 /* 往边的某一端加一个节点(幂等: 已在集合里直接算成功)。
    同时把边登记到该节点的 edges 列表 —— 双向引用必须同时成立。
-   与 link_parent_child 一致: 结构真变了就自己刷 uuid(身份是内容指纹)。 */
+   与 map_link_parent_child 一致: 结构真变了就自己刷 uuid(身份是内容指纹)。 */
 int map_edge_end_add(map_node* e, map_node* n, int side) {
     if (e == NULL || n == NULL) return -1;
     map_ptr_array* set = edge_side(e, side);
@@ -573,7 +573,7 @@ map_node* map_edge_connect(map_node* a, map_node* b) {
     return map_edge_connect_with(a, b, NULL, 0);
 }
 
-// 前向声明: edge_connect_with 里用到(定义在其下方)
+// 前向声明: map_edge_connect_with 里用到(定义在其下方)
 int edge_attach(map_node* e, map_node* a, map_node* b);
 
 // 建边并带载荷(data 外部所有, 同 map_node_new 语义): 文字/文件均可。
@@ -583,7 +583,7 @@ int edge_attach(map_node* e, map_node* a, map_node* b);
 //   要并行边 → 给每条加标题(内容不同即身份不同), 视觉上的弧度错开见 RENDER_RULES §2.4。
 //   注意: 载入存档不走这里(见 json_to_bare + edge_attach) —— 存档里的边有自己的载荷,
 //   一律要按原样重建, 否则并行边会被误当重复合并。
-//   幂等只对"两端各 1 个"的简单边生效; 多端边请用 edge_end_add 显式加端。
+//   幂等只对"两端各 1 个"的简单边生效; 多端边请用 map_edge_end_add 显式加端。
 map_node* map_edge_connect_with(map_node* a, map_node* b, void* data, size_t data_len) {
     if (a == NULL || b == NULL) return NULL;
     if ((data == NULL || data_len == 0)) {
@@ -607,7 +607,7 @@ map_node* map_edge_connect_with(map_node* a, map_node* b, void* data, size_t dat
 }
 
 // 把"已经造好的节点"登记成一条边(不新建): 载入存档时用 —— 载荷/属性由存档决定。
-// 只做结构: 两端各挂 1 个节点。多端请再调 edge_end_add。
+// 只做结构: 两端各挂 1 个节点。多端请再调 map_edge_end_add。
 // uuid 重算由调用方决定(它可能要覆盖存档 uuid)。
 int edge_attach(map_node* e, map_node* a, map_node* b) {
     if (e == NULL || a == NULL || b == NULL) return -1;
@@ -621,7 +621,7 @@ void map_node_free(map_node* n) {
     if (n == NULL || !n->alive) return;
     n->alive = 0;
     /* 若 n 是边节点(或只是"装了端点的半成品"): 先把 n 从每个端点的 edges 数组摘掉,
-       否则端点持有野指针。判定用"任一端非空"而不是 node_is_edge —— 一次失败的
+       否则端点持有野指针。判定用"任一端非空"而不是 map_node_is_edge —— 一次失败的
        半成品边也要能干净释放。 */
     if (n->edge_as.count > 0 || n->edge_bs.count > 0) {
         for (int side = 0; side < 2; side++) {
@@ -1060,7 +1060,7 @@ static map_node* json_to_bare(cJSON* obj) {
     return nd;
 }
 
-// 递归 JSON → node 树(第一遍: 建节点/父子关系, 注册 uuid)
+// 递归 JSON → map_node 树(第一遍: 建节点/父子关系, 注册 uuid)
 static map_node* json_to_node(cJSON* obj, map_node* parent, uuid_map* reg, size_t cap, size_t* cnt) {
     if (obj == NULL || !cJSON_IsObject(obj)) return NULL;
     cJSON* juuid = cJSON_GetObjectItem(obj, "uuid");
@@ -1124,7 +1124,7 @@ static void link_from_json(cJSON* obj, uuid_map* reg, size_t cnt) {
     }
 }
 
-// 载入时的 uuid 去重辅助: (uuid, node) 记录, 按 uuid 排序找重复组
+// 载入时的 uuid 去重辅助: (uuid, map_node) 记录, 按 uuid 排序找重复组
 typedef struct { const char* u; map_node* nd; } uuid_rec;
 static int uuid_rec_cmp(const void* a, const void* b) {
     return strcmp(((const uuid_rec*)a)->u, ((const uuid_rec*)b)->u);
@@ -1189,7 +1189,7 @@ static int map_load_file(map* m, const char* path) {
     // 顶层 edges 区段(两遍: 先建全部边节点, 再补"边指向边"——端点可能是边节点, 需先存在)
     if (je && cJSON_IsArray(je)) {
         int sz = cJSON_GetArraySize(je);
-        // 第一遍: 建所有端点能解析的边(普通端点), 记录新边节点 uuid→node(边指向边的端点用)
+        // 第一遍: 建所有端点能解析的边(普通端点), 记录新边节点 uuid→map_node(边指向边的端点用)
         // 查找表: reg(children 树) + 已建边节点
         size_t edge_cnt2 = 0;
         uuid_map* ereg = (uuid_map*)calloc((size_t)sz + 1, sizeof(uuid_map));
@@ -1372,7 +1372,7 @@ map* map_open(const char* path, const MapConfig* config) {
         if (!base) base = path ? strrchr(path, '\\') : NULL;
         const char* nm = base ? base + 1 : (path ? path : "map");
         char* nmc = strdup(nm);
-        if (nmc) node_adopt_data(m->root, nmc, strlen(nmc));   // 图名进指纹(同步 sha256 + 重算 uuid)
+        if (nmc) node_adopt_data(m->root, nmc, strlen(nmc));   // 图名进指纹(同步 map_sha256 + 重算 uuid)
     }
     if (m->config.enable_index) {
         m->index = idx_new();
