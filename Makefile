@@ -45,31 +45,44 @@ endif
 # 变量行一律不留行尾注释 —— 否则 `RUN := ./` 会变成 "./    ", 展开成 "./   maptest",
 # sh 去找一个叫 "./" 的命令。cmd 容忍行首空格, 所以这个坑只在 Linux 上炸。
 ifeq ($(OS_KIND),win)
-# cmd.exe 认裸文件名(先查当前目录)
+# --- Windows (PE) ---
   LIB      := catsena.dll
   EXE      := .exe
 # 不写 --export-all-symbols: 那会把 cJSON 一起导出
   SHARED   := -shared
   LIBS     := -lws2_32 -lbcrypt
   PIC      :=
-  RUN      :=
   RM       := del /Q
   RMERR    := 2>nul
 # 只导出 .def 点名的符号
   DEFARG   := -Wl,catsena.def -Wl,--exclude-all-symbols
 else
-# sh 必须带 ./
+# --- POSIX (ELF) ---
   LIB      := catsena.so
   EXE      :=
   SHARED   := -shared -fPIC
   LIBS     := -lpthread
   PIC      := -fPIC
-  RUN      := ./
   RM       := rm -f
   RMERR    :=
 # .def 的 Linux 等价物
   DEFARG   := -Wl,--version-script=catsena.map
   CPPFLAGS += -D_GNU_SOURCE
+endif
+
+# 运行前缀 —— 自测程序的调用方式在不同 shell 下不一样, 这里按"有没有 sh"分三档:
+#   POSIX                  → 必须 ./(sh 不搜索当前目录)
+#   Windows + MSYS2/GitBash(MSYSTEM 有值) → 同样用 sh, 必须 ./
+#   Windows + 原生 cmd      → 裸文件名就行(cmd 先查当前目录)
+# 注意: 不能用 ".\" —— Makefile 行尾的反斜杠是续行符, 会把下一行吞掉(踩过, make 会报 missing separator)。
+# 另注: make 在 Windows 下默认写入 SHELL := sh.exe, 但 sh.exe 不在 PATH 时它会退回 cmd 执行,
+# 所以不能靠 $(SHELL) 判断, 要看 MSYSTEM。
+ifeq ($(OS_KIND),posix)
+  RUN      := ./
+else ifneq ($(MSYSTEM),)
+  RUN      := ./
+else
+  RUN      :=
 endif
 
 TESTS := maptest$(EXE) verify-sha256$(EXE) test-id$(EXE) test-edge$(EXE) test-utils$(EXE) test-mt$(EXE) test-version$(EXE)

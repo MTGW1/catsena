@@ -14,10 +14,12 @@ jobs:
       - name: 构建 + 全部自测
         run: make
 
+      # 注意: `grep -c` 在匹配数为 0 时退出码是 1, 而 `bash -e` 会把这种失败当脚本中止 ——
+      # 也就是说"断言 cJSON 泄漏为 0"这个检查在真的为 0 时反而会红。所以必须 `|| true`。
       - name: 导出面纪律(51 个 map_* / 0 个 cJSON)
         run: |
-          n=$(nm -D --defined-only catsena.so | grep -c ' T map_')
-          c=$(nm -D --defined-only catsena.so | grep -c ' T cJSON')
+          n=$(nm -D --defined-only catsena.so | grep -c ' T map_' || true)
+          c=$(nm -D --defined-only catsena.so | grep -c ' T cJSON' || true)
           echo "map_* = $n, cJSON = $c"
           test "$n" = "51"
           test "$c" = "0"
@@ -38,14 +40,14 @@ jobs:
         with:
           install: mingw-w64-x86_64-gcc make
 
+      # MSYS2 下 make 用 sh(不是 cmd), 所以 Makefile 里的运行前缀按 MSYSTEM 判定为 ./
       - name: 构建 + 全部自测
         shell: msys2 {0}
         run: make
 
-      - name: 导出面纪律
+      - name: 导出面纪律(cJSON 必须 0)
         shell: msys2 {0}
         run: |
-          n=$(objdump -p catsena.dll | grep -c '+base\[')
-          c=$(objdump -p catsena.dll | grep -c 'cJSON_')
-          echo "导出条目 = $n, cJSON = $c"
+          c=$(objdump -p catsena.dll | grep -c 'cJSON_' || true)
+          echo "cJSON 导出 = $c"
           test "$c" = "0"
