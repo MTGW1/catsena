@@ -1,5 +1,7 @@
 # Catsena · 猫链
 
+[![build](https://github.com/MTGW1/catsena/actions/workflows/build.yml/badge.svg)](https://github.com/MTGW1/catsena/actions/workflows/build.yml)
+
 > 一个小型 C 图内核。节点，边，和一只不解释语义的猫。
 > A small C graph kernel: nodes, edges, and a kernel that refuses to know what they mean.
 
